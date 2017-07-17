@@ -1,0 +1,3 @@
+[submodule "camera_calibration"]
+	path = camera_calibration
+	url = git@github.com:alexhagiopol/camera_calibration.git
