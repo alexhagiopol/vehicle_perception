@@ -1,5 +1,7 @@
-Get the code:
+Get the project:
     
+    git clone git@github.com:alexhagiopol/vehicle_perception.git
+    cd vehicle_perception
     git submodule update --init
 
 Get example datasets:
@@ -7,9 +9,15 @@ Get example datasets:
     wget -O datasets.zip "https://www.dropbox.com/s/uzual4vchhzms1d/datasets.zip?dl=1"
     unzip datasets.zip
 
+Perform camera calibration:
+
+    cd camera_calibration
+    python calibrate.py -ch 6 -cw 9 -cd ../datasets/calibration_images/ -p ../camera_info.p
+
 Run the pipeline:
     
-    python main.py
+    cd ..
+    python main.py -p camera_info.p -d test_images
     
 TODO List:
 
