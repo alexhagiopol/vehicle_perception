@@ -3,6 +3,7 @@ import os
 import argparse
 import pickle
 import cv2
+import copy
 import numpy as np
 from camera_calibration import calibrate
 from matplotlib import pyplot as plt
@@ -13,6 +14,13 @@ def compute_forward_to_top_perspective_transform():
     top_view_points = np.float32([[262, 720], [262, 0], [1040, 0], [1040, 720]])
     forward_view_to_top_view = cv2.getPerspectiveTransform(forward_view_points, top_view_points)
     return forward_view_to_top_view
+
+
+def compute_top_to_forward_perspective_transform():
+    forward_view_points = np.float32([[262, 677], [580, 460], [703, 460], [1040, 677]])
+    top_view_points = np.float32([[262, 720], [262, 0], [1040, 0], [1040, 720]])
+    top_view_to_forward_view = cv2.getPerspectiveTransform(top_view_points, forward_view_points)
+    return top_view_to_forward_view
 
 
 def binary_threshold(undistorted_image, visualize=False):
@@ -149,13 +157,18 @@ def sliding_window_search(binary_warped, visualize=False):
     # Fit a second order polynomial to each
     left_fit = np.polyfit(lefty, leftx, 2)
     right_fit = np.polyfit(righty, rightx, 2)
+    print("left coefficients", left_fit)
+    print("right coefficients", right_fit)
+
+    # Generate x and y values for plotting
+    ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
+    left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+    right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+
+    top_view_points_left = np.float32([[left_fitx[i], ploty[i]] for i in range(len(left_fitx))]).reshape(-1, 1, 2)
+    top_view_points_right = np.float32([[right_fitx[i], ploty[i]] for i in range(len(right_fitx))]).reshape(-1, 1, 2)
 
     if visualize:
-        # Generate x and y values for plotting
-        ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
-        left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
-        right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
-
         out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
         out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
         plt.imshow(out_img)
@@ -166,6 +179,38 @@ def sliding_window_search(binary_warped, visualize=False):
         plt.show()
         plt.close()
 
+    return top_view_points_left, top_view_points_right
+
+
+def plot_points_and_display(image, left_points, right_points):
+    original_image = copy.copy(image)
+    polygon_points = np.concatenate((left_points, np.flip(right_points, axis=0)), axis=0)
+    print(np.array([[(polygon_points[i, 0, 0], polygon_points[i, 0, 1]) for i in range(polygon_points.shape[0])]]))
+    cv2.fillPoly(image, np.int32([[(polygon_points[i, 0, 0], polygon_points[i, 0, 1]) for i in range(polygon_points.shape[0])]]), [0, 255, 0])
+    result = cv2.addWeighted(original_image, 0.5, image, 0.2, 0)
+    plt.imshow(result)
+    plt.show()
+    plt.close()
+
+
+def pipeline(raw_image):
+    """
+    Execute main processing pipeline.
+    """
+    # convert to RGB
+    raw_image = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
+    # undistort
+    undistorted_image = calibrate.undistort_image(raw_image, camera_matrix, distortion_coefficients, visualize=False)
+    binary_threshold_image = binary_threshold(undistorted_image, visualize=False)
+    homography = compute_forward_to_top_perspective_transform()
+    top_view_image = cv2.warpPerspective(binary_threshold_image, homography,
+                                         (binary_threshold_image.shape[1], binary_threshold_image.shape[0]))
+    eroded_top_view = cv2.erode(top_view_image, np.ones((3, 3)))
+    top_view_points_left, top_view_points_right = sliding_window_search(eroded_top_view, visualize=False)
+    homography_inverse = compute_top_to_forward_perspective_transform()
+    front_view_points_left = cv2.perspectiveTransform(top_view_points_left, homography_inverse)
+    front_view_points_right = cv2.perspectiveTransform(top_view_points_right, homography_inverse)
+    plot_points_and_display(undistorted_image, front_view_points_left, front_view_points_right)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Estimate lane line curvature and detect objects in a video file')
@@ -179,12 +224,6 @@ if __name__ == "__main__":
     image_paths = glob.glob(os.path.join(args.dataset_directory, "*.jpg"))
     for index, image_path in enumerate(image_paths):
         test_image = cv2.imread(image_path)
-        test_image = cv2.cvtColor(test_image, cv2.COLOR_BGR2RGB)
-        undistorted_image = calibrate.undistort_image(test_image, camera_matrix, distortion_coefficients, visualize=False)
-        binary_threshold_image = binary_threshold(undistorted_image, visualize=False)
-        homography = compute_forward_to_top_perspective_transform()
-        top_view_image = cv2.warpPerspective(binary_threshold_image, homography, (binary_threshold_image.shape[1], binary_threshold_image.shape[0]))
-        eroded_top_view = cv2.erode(top_view_image, np.ones((3, 3)))
-        #show_image((1, 1, 1), "top_view_image", eroded_top_view, width=5, open_new_window=True)
-        sliding_window_search(eroded_top_view, visualize=True)
+        pipeline(test_image)
+
 
