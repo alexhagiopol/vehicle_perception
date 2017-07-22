@@ -8,6 +8,13 @@ from camera_calibration import calibrate
 from matplotlib import pyplot as plt
 
 
+def compute_forward_to_top_perspective_transform():
+    forward_view_points = np.float32([[262, 677], [580, 460], [703, 460], [1040, 677]])
+    top_view_points = np.float32([[262, 720], [262, 0], [1040, 0], [1040, 720]])
+    forward_view_to_top_view = cv2.getPerspectiveTransform(forward_view_points, top_view_points)
+    return forward_view_to_top_view
+
+
 def binary_threshold(undistorted_image, visualize=False):
     # Convert to HLS color space and separate the S channel
     # Note: undistorted_image is the undistorted image
@@ -57,6 +64,21 @@ def binary_threshold(undistorted_image, visualize=False):
     return combined_binary
 
 
+def show_image(location, title, img, width=3, open_new_window=False):
+    if open_new_window:
+        plt.figure(figsize=(width, width))
+    plt.subplot(*location)
+    plt.title(title, fontsize=8)
+    plt.axis('off')
+    if len(img.shape) == 3:
+        plt.imshow(img)
+    else:
+        plt.imshow(img, cmap='gray')
+    if open_new_window:
+        plt.show()
+        plt.close()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Estimate lane line curvature and detect objects in a video file')
     parser.add_argument('--dataset-directory', '-d', dest='dataset_directory', type=str, required=True, help='Required string: Directory containing driving log.')
@@ -71,4 +93,8 @@ if __name__ == "__main__":
         test_image = cv2.imread(image_path)
         test_image = cv2.cvtColor(test_image, cv2.COLOR_BGR2RGB)
         undistorted_image = calibrate.undistort_image(test_image, camera_matrix, distortion_coefficients, visualize=False)
-        binary_threshold_image = binary_threshold(undistorted_image, visualize=True)
+        binary_threshold_image = binary_threshold(undistorted_image, visualize=False)
+        homography = compute_forward_to_top_perspective_transform()
+        top_view_image = cv2.warpPerspective(binary_threshold_image, homography, (binary_threshold_image.shape[1], binary_threshold_image.shape[0]))
+        show_image((1, 1, 1), "top_view_image", top_view_image, width=5, open_new_window=True)
+
