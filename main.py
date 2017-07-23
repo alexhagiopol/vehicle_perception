@@ -157,8 +157,29 @@ def sliding_window_search(binary_warped, visualize=False):
     # Fit a second order polynomial to each
     left_fit = np.polyfit(lefty, leftx, 2)
     right_fit = np.polyfit(righty, rightx, 2)
-    print("left coefficients", left_fit)
-    print("right coefficients", right_fit)
+
+
+    # CONVERT TO METERS
+    # Define conversions in x and y from pixels space to meters
+    ym_per_pix = 30 / 720  # meters per pixel in y dimension
+    xm_per_pix = 3.7 / 700  # meters per pixel in x dimension
+    # Fit new polynomials to x,y in world space
+    left_fit_meters = np.polyfit(lefty * ym_per_pix, leftx * xm_per_pix, 2)
+    right_fit_meters = np.polyfit(righty * ym_per_pix, rightx * xm_per_pix, 2)
+    # Calculate the new radii of curvature
+    left_curve_rad = ((1 + (2 * left_fit_meters[0] * 719 * ym_per_pix + left_fit_meters[1]) ** 2) ** 1.5) / np.absolute(
+        2 * left_fit_meters[0])
+    right_curve_rad = ((1 + (2 * right_fit_meters[0] * 719 * ym_per_pix + right_fit_meters[1]) ** 2) ** 1.5) / np.absolute(
+        2 * right_fit_meters[0])
+
+
+    '''
+    ploty = np.linspace(0, 719, num=720)  # to cover same y-range as image
+    y_eval = np.max(ploty)
+    left_curve_rad = ((1 + (2 * left_fit[0] * y_eval + left_fit[1]) ** 2) ** 1.5) / np.absolute(2 * left_fit[0])
+    right_curve_rad = ((1 + (2 * right_fit[0] * y_eval + right_fit[1]) ** 2) ** 1.5) / np.absolute(2 * right_fit[0])
+    print("left radius=", left_curve_rad, "right radius=", right_curve_rad)
+    '''
 
     # Generate x and y values for plotting
     ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
@@ -179,18 +200,20 @@ def sliding_window_search(binary_warped, visualize=False):
         plt.show()
         plt.close()
 
-    return top_view_points_left, top_view_points_right
+    return top_view_points_left, top_view_points_right, left_curve_rad, right_curve_rad
 
 
-def plot_points_and_display(image, left_points, right_points):
+def display_info(image, left_points, right_points, radius):
     original_image = copy.copy(image)
     polygon_points = np.concatenate((left_points, np.flip(right_points, axis=0)), axis=0)
-    print(np.array([[(polygon_points[i, 0, 0], polygon_points[i, 0, 1]) for i in range(polygon_points.shape[0])]]))
+    # print(np.array([[(polygon_points[i, 0, 0], polygon_points[i, 0, 1]) for i in range(polygon_points.shape[0])]]))
     cv2.fillPoly(image, np.int32([[(polygon_points[i, 0, 0], polygon_points[i, 0, 1]) for i in range(polygon_points.shape[0])]]), [0, 255, 0])
     result = cv2.addWeighted(original_image, 0.5, image, 0.2, 0)
+    cv2.putText(result, "lane curvature radius: " + str(int(radius)) + "m", (75, 75), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), thickness=5)
     plt.imshow(result)
     plt.show()
     plt.close()
+    return result
 
 
 def pipeline(raw_image):
@@ -203,14 +226,15 @@ def pipeline(raw_image):
     undistorted_image = calibrate.undistort_image(raw_image, camera_matrix, distortion_coefficients, visualize=False)
     binary_threshold_image = binary_threshold(undistorted_image, visualize=False)
     homography = compute_forward_to_top_perspective_transform()
-    top_view_image = cv2.warpPerspective(binary_threshold_image, homography,
-                                         (binary_threshold_image.shape[1], binary_threshold_image.shape[0]))
+    top_view_image = cv2.warpPerspective(binary_threshold_image, homography, (binary_threshold_image.shape[1], binary_threshold_image.shape[0]))
     eroded_top_view = cv2.erode(top_view_image, np.ones((3, 3)))
-    top_view_points_left, top_view_points_right = sliding_window_search(eroded_top_view, visualize=False)
+    top_view_points_left, top_view_points_right, left_radius, right_radius = sliding_window_search(eroded_top_view, visualize=False)
     homography_inverse = compute_top_to_forward_perspective_transform()
     front_view_points_left = cv2.perspectiveTransform(top_view_points_left, homography_inverse)
     front_view_points_right = cv2.perspectiveTransform(top_view_points_right, homography_inverse)
-    plot_points_and_display(undistorted_image, front_view_points_left, front_view_points_right)
+    radius = (left_radius + right_radius) / 2
+    # print("left_radius", left_radius, "right_radius", right_radius, "radius", )
+    frame_with_info = display_info(undistorted_image, front_view_points_left, front_view_points_right, radius)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Estimate lane line curvature and detect objects in a video file')
@@ -227,5 +251,3 @@ if __name__ == "__main__":
     for index, image_path in enumerate(image_paths):
         test_image = cv2.imread(image_path)
         pipeline(test_image)
-
-
