@@ -217,6 +217,8 @@ if __name__ == "__main__":
     parser.add_argument('--dataset-directory', '-d', dest='dataset_directory', type=str, required=True, help='Required string: Directory containing driving log.')
     parser.add_argument('--pickle-path', '-p', dest='pickle_path', type=str, required=True, help='Required string: Path to pickle file with calibration info.')
     args = parser.parse_args()
+    assert(os.path.exists(args.dataset_directory))
+    assert(os.path.isfile(args.pickle_path))
     with open(args.pickle_path, mode='rb') as f:
         camera_info = pickle.load(f)
     camera_matrix = camera_info['camera_matrix']
