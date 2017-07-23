@@ -11,13 +11,11 @@ Get example datasets:
 
 Perform camera calibration:
 
-    cd camera_calibration
-    python calibrate.py -ch 6 -cw 9 -cd ../datasets/calibration_images/ -p ../camera_info.p
+    python camera_calibration/calibrate.py -ch 6 -cw 9 -cd datasets/calibration_images/ -p camera_info.p
 
 Run the pipeline:
     
-    cd ..
-    python main.py -p camera_info.p -d test_images
+    python main.py -p camera_info.p -d datasets/test_images
     
 TODO List:
 
