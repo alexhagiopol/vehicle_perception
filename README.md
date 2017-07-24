@@ -27,5 +27,5 @@ TODO List:
 * ~~Warp the detected lane boundaries back onto the original image.~~
 * ~~Output visual display of the lane boundaries and numerical estimation of lane curvature and vehicle position.~~
 
-[![fpv](figures/video_preview.png)](https://youtu.be/l6JVoMymH2s#t=0s "Lane Detection Demo")
+[![fpv](figures/video_preview.png)](https://youtu.be/S9b64DpgMik#t=0s "Lane Detection Demo")
 

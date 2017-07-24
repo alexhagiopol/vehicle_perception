@@ -34,7 +34,7 @@ def initialize_lane_detector(pickle_path, images_in_directory=None, videos_in_di
         process_videos(videos_in_directory, videos_out_directory)
 
 
-def procees_still_images( images_in_directory):
+def procees_still_images(images_in_directory):
     global left_fit
     global right_fit
     image_paths = glob.glob(os.path.join(images_in_directory, "*.jpg"))
@@ -82,12 +82,12 @@ def lane_detection_pipeline(raw_image, convert_to_RGB=False):
     homography = compute_forward_to_top_perspective_transform()
     top_view_image = cv2.warpPerspective(binary_threshold_image, homography, (binary_threshold_image.shape[1], binary_threshold_image.shape[0]))
     eroded_top_view = cv2.erode(top_view_image, np.ones((3, 3)))
-    top_view_points_left, top_view_points_right, left_radius, right_radius = estimate_lane_lines(eroded_top_view, visualize=False)
+    top_view_points_left, top_view_points_right, left_radius, right_radius, offset = estimate_lane_lines(eroded_top_view, visualize=False)
     homography_inverse = compute_top_to_forward_perspective_transform()
     front_view_points_left = cv2.perspectiveTransform(top_view_points_left, homography_inverse)
     front_view_points_right = cv2.perspectiveTransform(top_view_points_right, homography_inverse)
     radius = (left_radius + right_radius) / 2
-    frame_with_info = display_info(undistorted_image, front_view_points_left, front_view_points_right, radius)
+    frame_with_info = display_info(undistorted_image, front_view_points_left, front_view_points_right, radius, offset)
     return frame_with_info
 
 
@@ -106,42 +106,31 @@ def compute_top_to_forward_perspective_transform():
 
 
 def binary_threshold(undistorted_image, visualize=False):
-    # Convert to HLS color space and separate the S channel
-    # Note: undistorted_image is the undistorted image
+    # convert to HLS color space and separate the S channel
     hls = cv2.cvtColor(undistorted_image, cv2.COLOR_RGB2HLS)
     s_channel = hls[:, :, 2]
-
-    # Grayscale image
-    # NOTE: we already saw that standard grayscaling lost color information for the lane lines
-    # Explore gradients in other colors spaces / color channels to see what might work better
     gray = cv2.cvtColor(undistorted_image, cv2.COLOR_RGB2GRAY)
-
-    # Sobel x
+    # sobel operator
     sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0)  # Take the derivative in x
     abs_sobelx = np.absolute(sobelx)  # Absolute x derivative to accentuate lines away from horizontal
     scaled_sobel = np.uint8(255 * abs_sobelx / np.max(abs_sobelx))
-
-    # Threshold x gradient
+    # threshold x gradient
     thresh_min = 20
     thresh_max = 100
     sxbinary = np.zeros_like(scaled_sobel)
     sxbinary[(scaled_sobel >= thresh_min) & (scaled_sobel <= thresh_max)] = 255
-
-    # Threshold color channel
+    # threshold color channel
     s_thresh_min = 170
     s_thresh_max = 255
     s_binary = np.zeros_like(s_channel)
     s_binary[(s_channel >= s_thresh_min) & (s_channel <= s_thresh_max)] = 255
-
-    # Combine the two binary thresholds
+    # combine the two binary thresholds
     combined_binary = np.zeros_like(sxbinary)
     combined_binary[(s_binary == 255) | (sxbinary == 255)] = 1
-
     if visualize:
         # Stack each channel to view their individual contributions in green and blue respectively
         # This returns a stack of the two binary images, whose components you can see as different colors
         color_binary = np.dstack((np.zeros_like(sxbinary), sxbinary, s_binary))
-
         # Plotting thresholded images
         f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
         ax1.set_title('Stacked thresholds')
@@ -172,11 +161,11 @@ def show_image(location, title, img, width=3, open_new_window=False):
 def estimate_lane_lines(binary_top_view_image, visualize=False):
     global left_fit
     global right_fit
+    if visualize:
+        out_img = np.dstack((binary_top_view_image, binary_top_view_image, binary_top_view_image)) * 255
     if left_fit is None or right_fit is None:  # first lane line estimate
         # estimate search starting point with histogram
         histogram = np.sum(binary_top_view_image[binary_top_view_image.shape[0] // 2:, :], axis=0)
-        if visualize:
-            out_img = np.dstack((binary_top_view_image, binary_top_view_image, binary_top_view_image)) * 255
         midpoint = np.int(histogram.shape[0] / 2)
         leftx_base = np.argmax(histogram[:midpoint])
         rightx_base = np.argmax(histogram[midpoint:]) + midpoint
@@ -219,21 +208,17 @@ def estimate_lane_lines(binary_top_view_image, visualize=False):
                 leftx_current = np.int(np.mean(nonzerox[good_left_inds]))
             if len(good_right_inds) > minpix:
                 rightx_current = np.int(np.mean(nonzerox[good_right_inds]))
-
         # Concatenate the arrays of indices
         left_lane_inds = np.concatenate(left_lane_inds)
         right_lane_inds = np.concatenate(right_lane_inds)
-
         # Extract left and right line pixel positions
         leftx = nonzerox[left_lane_inds]
         lefty = nonzeroy[left_lane_inds]
         rightx = nonzerox[right_lane_inds]
         righty = nonzeroy[right_lane_inds]
-
         # Fit a second order polynomial to each
         left_fit = np.polyfit(lefty, leftx, 2)
         right_fit = np.polyfit(righty, rightx, 2)
-
         # Generate x and y values for plotting
         ploty = np.linspace(0, binary_top_view_image.shape[0] - 1, binary_top_view_image.shape[0])
         left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
@@ -246,7 +231,6 @@ def estimate_lane_lines(binary_top_view_image, visualize=False):
         margin = 100
         left_lane_inds = ((nonzerox > (left_fit[0] * (nonzeroy ** 2) + left_fit[1] * nonzeroy + left_fit[2] - margin)) & (nonzerox < (left_fit[0] * (nonzeroy ** 2) + left_fit[1] * nonzeroy + left_fit[2] + margin)))
         right_lane_inds = ((nonzerox > (right_fit[0] * (nonzeroy ** 2) + right_fit[1] * nonzeroy + right_fit[2] - margin)) & (nonzerox < (right_fit[0] * (nonzeroy ** 2) + right_fit[1] * nonzeroy + right_fit[2] + margin)))
-
         # Again, extract left and right line pixel positions
         leftx = nonzerox[left_lane_inds]
         lefty = nonzeroy[left_lane_inds]
@@ -262,7 +246,6 @@ def estimate_lane_lines(binary_top_view_image, visualize=False):
 
     top_view_points_left = np.float32([[left_fitx[i], ploty[i]] for i in range(len(left_fitx))]).reshape(-1, 1, 2)
     top_view_points_right = np.float32([[right_fitx[i], ploty[i]] for i in range(len(right_fitx))]).reshape(-1, 1, 2)
-
     # CONVERT FROM PIXELS SPACE TO METERS SPACE
     # Define conversions in x and y from pixels space to meters
     ym_per_pix = 30 / 720  # meters per pixel in y dimension
@@ -276,7 +259,11 @@ def estimate_lane_lines(binary_top_view_image, visualize=False):
     right_curve_rad = ((1 + (
     2 * right_fit_meters[0] * 719 * ym_per_pix + right_fit_meters[1]) ** 2) ** 1.5) / np.absolute(
         2 * right_fit_meters[0])
-
+    # compute offset from center of lane
+    # x = Ay^2 + By + C
+    center = np.int(binary_top_view_image.shape[1] / 2)
+    middle_of_lane = (right_fitx[-1] - left_fitx[-1]) / 2.0 + left_fitx[-1]
+    offset_meters = (center - middle_of_lane) * xm_per_pix
     if visualize:
         out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
         out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
@@ -287,13 +274,14 @@ def estimate_lane_lines(binary_top_view_image, visualize=False):
         plt.ylim(720, 0)
         plt.show()
         plt.close()
-    return top_view_points_left, top_view_points_right, left_curve_rad, right_curve_rad
+    return top_view_points_left, top_view_points_right, left_curve_rad, right_curve_rad, offset_meters
 
 
-def display_info(image, left_points, right_points, radius):
+def display_info(image, left_points, right_points, radius, offset):
     original_image = copy.copy(image)
     polygon_points = np.concatenate((left_points, np.flip(right_points, axis=0)), axis=0)
     cv2.fillPoly(image, np.int32([[(polygon_points[i, 0, 0], polygon_points[i, 0, 1]) for i in range(polygon_points.shape[0])]]), [0, 255, 0])
     result = cv2.addWeighted(original_image, 0.5, image, 0.2, 0)
     cv2.putText(result, "lane curvature radius: " + str(int(radius)) + "m", (75, 75), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), thickness=5)
+    cv2.putText(result, "center lane offset: " + str(round(offset, 2)) + "m", (75, 175), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), thickness=5)
     return result
