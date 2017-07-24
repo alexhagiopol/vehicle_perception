@@ -33,6 +33,64 @@ def initialize_lane_detector(pickle_path, images_in_directory=None, videos_in_di
         assert (os.path.exists(videos_in_directory))
         process_videos(videos_in_directory, videos_out_directory)
 
+
+def procees_still_images( images_in_directory):
+    global left_fit
+    global right_fit
+    image_paths = glob.glob(os.path.join(images_in_directory, "*.jpg"))
+    for index, image_path in enumerate(image_paths):
+        test_image = cv2.imread(image_path)
+        left_fit = None
+        right_fit = None
+        lane_detection_pipeline(test_image, convert_to_RGB=True)
+
+
+def process_videos(in_video_dir_name, out_video_dir_name):
+    global left_fit
+    global right_fit
+    if os.path.exists(out_video_dir_name):
+        shutil.rmtree(out_video_dir_name)
+    os.mkdir(out_video_dir_name)
+    input_video_filenames = os.listdir(in_video_dir_name)
+    for video_filename in input_video_filenames:
+        left_fit = None
+        right_fit = None
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        full_video_in_path = os.path.join(os.path.join(dir_path, in_video_dir_name), video_filename)
+        assert (os.path.isfile(full_video_in_path))
+        full_video_out_path = os.path.join(dir_path, out_video_dir_name)
+        print()
+        clip = VideoFileClip(os.path.join(in_video_dir_name, full_video_in_path))
+        processed_clip = clip.fl_image(lane_detection_pipeline)
+        processed_clip_name = os.path.join(full_video_out_path, "processed_" + video_filename)
+        processed_clip.write_videofile(processed_clip_name, audio=False)
+        print("processed video: ", processed_clip_name)
+
+
+def lane_detection_pipeline(raw_image, convert_to_RGB=False):
+    """
+    Execute main processing pipeline.
+    """
+    global camera_matrix
+    global distortion_coefficients
+    # convert to RGB
+    if convert_to_RGB:
+        raw_image = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
+    # undistort
+    undistorted_image = calibrate.undistort_image(raw_image, camera_matrix, distortion_coefficients, visualize=False)
+    binary_threshold_image = binary_threshold(undistorted_image, visualize=False)
+    homography = compute_forward_to_top_perspective_transform()
+    top_view_image = cv2.warpPerspective(binary_threshold_image, homography, (binary_threshold_image.shape[1], binary_threshold_image.shape[0]))
+    eroded_top_view = cv2.erode(top_view_image, np.ones((3, 3)))
+    top_view_points_left, top_view_points_right, left_radius, right_radius = estimate_lane_lines(eroded_top_view, visualize=False)
+    homography_inverse = compute_top_to_forward_perspective_transform()
+    front_view_points_left = cv2.perspectiveTransform(top_view_points_left, homography_inverse)
+    front_view_points_right = cv2.perspectiveTransform(top_view_points_right, homography_inverse)
+    radius = (left_radius + right_radius) / 2
+    frame_with_info = display_info(undistorted_image, front_view_points_left, front_view_points_right, radius)
+    return frame_with_info
+
+
 def compute_forward_to_top_perspective_transform():
     forward_view_points = np.float32([[262, 677], [580, 460], [703, 460], [1040, 677]])
     top_view_points = np.float32([[262, 720], [262, 0], [1040, 0], [1040, 720]])
@@ -111,52 +169,43 @@ def show_image(location, title, img, width=3, open_new_window=False):
         plt.close()
 
 
-def sliding_window_search(binary_warped, visualize=False):
+def estimate_lane_lines(binary_top_view_image, visualize=False):
     global left_fit
     global right_fit
-    if left_fit is None or right_fit is None:
-        # Assuming you have created a warped binary image called "binary_warped"
-        # Take a histogram of the bottom half of the image
-        histogram = np.sum(binary_warped[binary_warped.shape[0] // 2:, :], axis=0)
-        # Create an output image to draw on and  visualize the result
-        out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
-        # Find the peak of the left and right halves of the histogram
-        # These will be the starting point for the left and right lines
+    if left_fit is None or right_fit is None:  # first lane line estimate
+        # estimate search starting point with histogram
+        histogram = np.sum(binary_top_view_image[binary_top_view_image.shape[0] // 2:, :], axis=0)
+        if visualize:
+            out_img = np.dstack((binary_top_view_image, binary_top_view_image, binary_top_view_image)) * 255
         midpoint = np.int(histogram.shape[0] / 2)
         leftx_base = np.argmax(histogram[:midpoint])
         rightx_base = np.argmax(histogram[midpoint:]) + midpoint
-
-        # Choose the number of sliding windows
-        nwindows = 9
-        # Set height of windows
-        window_height = np.int(binary_warped.shape[0] / nwindows)
-        # Identify the x and y positions of all nonzero pixels in the image
-        nonzero = binary_warped.nonzero()
+        nwindows = 9  # number of sliding windows
+        window_height = np.int(binary_top_view_image.shape[0] / nwindows)
+        # x and y positions of all nonzero pixels in the image
+        nonzero = binary_top_view_image.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
         # Current positions to be updated for each window
         leftx_current = leftx_base
         rightx_current = rightx_base
-        # Set the width of the windows +/- margin
-        margin = 100
-        # Set minimum number of pixels found to recenter window
-        minpix = 50
-        # Create empty lists to receive left and right lane pixel indices
+        margin = 100  # width of the windows +/- margin
+        minpix = 50  # minimum number of pixels found to recenter window
+        # empty lists to receive left and right lane pixel indices
         left_lane_inds = []
         right_lane_inds = []
-
-        # Step through the windows one by one
         for window in range(nwindows):
             # Identify window boundaries in x and y (and right and left)
-            win_y_low = binary_warped.shape[0] - (window + 1) * window_height
-            win_y_high = binary_warped.shape[0] - window * window_height
+            win_y_low = binary_top_view_image.shape[0] - (window + 1) * window_height
+            win_y_high = binary_top_view_image.shape[0] - window * window_height
             win_xleft_low = leftx_current - margin
             win_xleft_high = leftx_current + margin
             win_xright_low = rightx_current - margin
             win_xright_high = rightx_current + margin
-            # Draw the windows on the visualization image
-            cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
-            cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
+            if visualize:
+                # Draw the windows on the visualization image
+                cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
+                cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
             # Identify the nonzero pixels in x and y within the window
             good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_xleft_low) & (
             nonzerox < win_xleft_high)).nonzero()[0]
@@ -186,15 +235,12 @@ def sliding_window_search(binary_warped, visualize=False):
         right_fit = np.polyfit(righty, rightx, 2)
 
         # Generate x and y values for plotting
-        ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
+        ploty = np.linspace(0, binary_top_view_image.shape[0] - 1, binary_top_view_image.shape[0])
         left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
         right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
 
-    else:
-        # Assume you now have a new warped binary image
-        # from the next frame of video (also called "binary_warped")
-        # It's now much easier to find line pixels!
-        nonzero = binary_warped.nonzero()
+    else:  # Lane line estimate already exists
+        nonzero = binary_top_view_image.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
         margin = 100
@@ -210,14 +256,14 @@ def sliding_window_search(binary_warped, visualize=False):
         left_fit = np.polyfit(lefty, leftx, 2)
         right_fit = np.polyfit(righty, rightx, 2)
         # Generate x and y values for plotting
-        ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
+        ploty = np.linspace(0, binary_top_view_image.shape[0] - 1, binary_top_view_image.shape[0])
         left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
         right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
 
     top_view_points_left = np.float32([[left_fitx[i], ploty[i]] for i in range(len(left_fitx))]).reshape(-1, 1, 2)
     top_view_points_right = np.float32([[right_fitx[i], ploty[i]] for i in range(len(right_fitx))]).reshape(-1, 1, 2)
 
-    # CONVERT TO METERS
+    # CONVERT FROM PIXELS SPACE TO METERS SPACE
     # Define conversions in x and y from pixels space to meters
     ym_per_pix = 30 / 720  # meters per pixel in y dimension
     xm_per_pix = 3.7 / 700  # meters per pixel in x dimension
@@ -250,64 +296,4 @@ def display_info(image, left_points, right_points, radius):
     cv2.fillPoly(image, np.int32([[(polygon_points[i, 0, 0], polygon_points[i, 0, 1]) for i in range(polygon_points.shape[0])]]), [0, 255, 0])
     result = cv2.addWeighted(original_image, 0.5, image, 0.2, 0)
     cv2.putText(result, "lane curvature radius: " + str(int(radius)) + "m", (75, 75), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), thickness=5)
-    #plt.imshow(result)
-    #plt.show()
-    #plt.close()
     return result
-
-
-def processing_pipeline(raw_image, convert_to_RGB=False):
-    """
-    Execute main processing pipeline.
-    """
-    global camera_matrix
-    global distortion_coefficients
-    # convert to RGB
-    if convert_to_RGB:
-        raw_image = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
-    # undistort
-    undistorted_image = calibrate.undistort_image(raw_image, camera_matrix, distortion_coefficients, visualize=False)
-    binary_threshold_image = binary_threshold(undistorted_image, visualize=False)
-    homography = compute_forward_to_top_perspective_transform()
-    top_view_image = cv2.warpPerspective(binary_threshold_image, homography, (binary_threshold_image.shape[1], binary_threshold_image.shape[0]))
-    eroded_top_view = cv2.erode(top_view_image, np.ones((3, 3)))
-    top_view_points_left, top_view_points_right, left_radius, right_radius = sliding_window_search(eroded_top_view, visualize=False)
-    homography_inverse = compute_top_to_forward_perspective_transform()
-    front_view_points_left = cv2.perspectiveTransform(top_view_points_left, homography_inverse)
-    front_view_points_right = cv2.perspectiveTransform(top_view_points_right, homography_inverse)
-    radius = (left_radius + right_radius) / 2
-    frame_with_info = display_info(undistorted_image, front_view_points_left, front_view_points_right, radius)
-    return frame_with_info
-
-
-def procees_still_images( images_in_directory):
-    global left_fit
-    global right_fit
-    image_paths = glob.glob(os.path.join(images_in_directory, "*.jpg"))
-    for index, image_path in enumerate(image_paths):
-        test_image = cv2.imread(image_path)
-        left_fit = None
-        right_fit = None
-        processing_pipeline(test_image, convert_to_RGB=True)
-
-
-def process_videos(in_video_dir_name, out_video_dir_name):
-    global left_fit
-    global right_fit
-    if os.path.exists(out_video_dir_name):
-        shutil.rmtree(out_video_dir_name)
-    os.mkdir(out_video_dir_name)
-    input_video_filenames = os.listdir(in_video_dir_name)
-    for video_filename in input_video_filenames:
-        left_fit = None
-        right_fit = None
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        full_video_in_path = os.path.join(os.path.join(dir_path, in_video_dir_name), video_filename)
-        assert (os.path.isfile(full_video_in_path))
-        full_video_out_path = os.path.join(dir_path, out_video_dir_name)
-        print()
-        clip = VideoFileClip(os.path.join(in_video_dir_name, full_video_in_path))
-        processed_clip = clip.fl_image(processing_pipeline)
-        processed_clip_name = os.path.join(full_video_out_path, "processed_" + video_filename)
-        processed_clip.write_videofile(processed_clip_name, audio=False)
-        print("processed video: ", processed_clip_name)
