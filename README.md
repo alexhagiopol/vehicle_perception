@@ -15,6 +15,7 @@ Perform camera calibration:
 
 Run the pipeline:
     
+    mkdir output
     python main.py -p camera_info.p -vid datasets/project_video/ -vod output/
     
 TODO List:
