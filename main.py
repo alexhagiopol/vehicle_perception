@@ -259,18 +259,26 @@ def processing_pipeline(raw_image, convert_to_RGB=False):
 
 
 def procees_still_images( images_in_directory):
+    global left_fit
+    global right_fit
     image_paths = glob.glob(os.path.join(images_in_directory, "*.jpg"))
     for index, image_path in enumerate(image_paths):
         test_image = cv2.imread(image_path)
+        left_fit = None
+        right_fit = None
         processing_pipeline(test_image, convert_to_RGB=True)
 
 
 def process_videos(in_video_dir_name, out_video_dir_name):
+    global left_fit
+    global right_fit
     if os.path.exists(out_video_dir_name):
         shutil.rmtree(out_video_dir_name)
     os.mkdir(out_video_dir_name)
     input_video_filenames = os.listdir(in_video_dir_name)
     for video_filename in input_video_filenames:
+        left_fit = None
+        right_fit = None
         dir_path = os.path.dirname(os.path.realpath(__file__))
         full_video_in_path = os.path.join(os.path.join(dir_path, in_video_dir_name), video_filename)
         assert (os.path.isfile(full_video_in_path))
