@@ -15,7 +15,7 @@ Perform camera calibration:
 
 Run the pipeline:
     
-    python main.py -p camera_info.p -d datasets/test_images
+    python main.py -p camera_info.p -vid datasets/project_video/ -vod output/
     
 TODO List:
 * ~~Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.~~
