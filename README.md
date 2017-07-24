@@ -1,3 +1,11 @@
+## Lane and Vehicle Detection
+
+![lane_detection_demo](figures/lane_detection_demo.gif)
+
+### Abstract
+This project implements and visualizes lane detection and curve shape estimation using the Sobel operator and polynomial 
+least squares fit. The project is tested and succeeds on a dashboard camera video feed. 
+
 Get the project:
     
     git clone git@github.com:alexhagiopol/vehicle_perception.git
