@@ -5,6 +5,8 @@ import pickle
 import cv2
 import copy
 import numpy as np
+import shutil
+from moviepy.editor import VideoFileClip
 from camera_calibration import calibrate
 from matplotlib import pyplot as plt
 
@@ -158,7 +160,6 @@ def sliding_window_search(binary_warped, visualize=False):
     left_fit = np.polyfit(lefty, leftx, 2)
     right_fit = np.polyfit(righty, rightx, 2)
 
-
     # CONVERT TO METERS
     # Define conversions in x and y from pixels space to meters
     ym_per_pix = 30 / 720  # meters per pixel in y dimension
@@ -171,15 +172,6 @@ def sliding_window_search(binary_warped, visualize=False):
         2 * left_fit_meters[0])
     right_curve_rad = ((1 + (2 * right_fit_meters[0] * 719 * ym_per_pix + right_fit_meters[1]) ** 2) ** 1.5) / np.absolute(
         2 * right_fit_meters[0])
-
-
-    '''
-    ploty = np.linspace(0, 719, num=720)  # to cover same y-range as image
-    y_eval = np.max(ploty)
-    left_curve_rad = ((1 + (2 * left_fit[0] * y_eval + left_fit[1]) ** 2) ** 1.5) / np.absolute(2 * left_fit[0])
-    right_curve_rad = ((1 + (2 * right_fit[0] * y_eval + right_fit[1]) ** 2) ** 1.5) / np.absolute(2 * right_fit[0])
-    print("left radius=", left_curve_rad, "right radius=", right_curve_rad)
-    '''
 
     # Generate x and y values for plotting
     ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
@@ -199,29 +191,28 @@ def sliding_window_search(binary_warped, visualize=False):
         plt.ylim(720, 0)
         plt.show()
         plt.close()
-
     return top_view_points_left, top_view_points_right, left_curve_rad, right_curve_rad
 
 
 def display_info(image, left_points, right_points, radius):
     original_image = copy.copy(image)
     polygon_points = np.concatenate((left_points, np.flip(right_points, axis=0)), axis=0)
-    # print(np.array([[(polygon_points[i, 0, 0], polygon_points[i, 0, 1]) for i in range(polygon_points.shape[0])]]))
     cv2.fillPoly(image, np.int32([[(polygon_points[i, 0, 0], polygon_points[i, 0, 1]) for i in range(polygon_points.shape[0])]]), [0, 255, 0])
     result = cv2.addWeighted(original_image, 0.5, image, 0.2, 0)
     cv2.putText(result, "lane curvature radius: " + str(int(radius)) + "m", (75, 75), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), thickness=5)
-    plt.imshow(result)
-    plt.show()
-    plt.close()
+    #plt.imshow(result)
+    #plt.show()
+    #plt.close()
     return result
 
 
-def pipeline(raw_image):
+def processing_pipeline(raw_image, convert_to_RGB=False):
     """
     Execute main processing pipeline.
     """
     # convert to RGB
-    raw_image = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
+    if convert_to_RGB:
+        raw_image = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
     # undistort
     undistorted_image = calibrate.undistort_image(raw_image, camera_matrix, distortion_coefficients, visualize=False)
     binary_threshold_image = binary_threshold(undistorted_image, visualize=False)
@@ -233,21 +224,60 @@ def pipeline(raw_image):
     front_view_points_left = cv2.perspectiveTransform(top_view_points_left, homography_inverse)
     front_view_points_right = cv2.perspectiveTransform(top_view_points_right, homography_inverse)
     radius = (left_radius + right_radius) / 2
-    # print("left_radius", left_radius, "right_radius", right_radius, "radius", )
     frame_with_info = display_info(undistorted_image, front_view_points_left, front_view_points_right, radius)
+    return frame_with_info
+
+
+def procees_still_images( images_in_directory):
+    image_paths = glob.glob(os.path.join(images_in_directory, "*.jpg"))
+    for index, image_path in enumerate(image_paths):
+        test_image = cv2.imread(image_path)
+        processing_pipeline(test_image, convert_to_RGB=True)
+
+
+def process_videos(in_video_dir_name, out_video_dir_name, camera_matrix, distortion_coefficients):
+    if os.path.exists(out_video_dir_name):
+        shutil.rmtree(out_video_dir_name)
+    os.mkdir(out_video_dir_name)
+    input_video_filenames = os.listdir(in_video_dir_name)
+    for video_filename in input_video_filenames:
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        full_video_in_path = os.path.join(os.path.join(dir_path, in_video_dir_name), video_filename)
+        assert (os.path.isfile(full_video_in_path))
+        full_video_out_path = os.path.join(dir_path, out_video_dir_name)
+        print()
+        clip = VideoFileClip(os.path.join(in_video_dir_name, full_video_in_path))
+        processed_clip = clip.fl_image(processing_pipeline)
+        processed_clip_name = os.path.join(full_video_out_path, "processed_" + video_filename)
+        processed_clip.write_videofile(processed_clip_name, audio=False)
+        print("processed video: ", processed_clip_name)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Estimate lane line curvature and detect objects in a video file')
-    parser.add_argument('--dataset-directory', '-d', dest='dataset_directory', type=str, required=True, help='Required string: Directory containing driving log.')
-    parser.add_argument('--pickle-path', '-p', dest='pickle_path', type=str, required=True, help='Required string: Path to pickle file with calibration info.')
+    parser.add_argument('--pickle-path', '-p', dest='pickle_path', type=str, required=True,
+                        help='Required string: Path to pickle file with calibration info.')
+    parser.add_argument('--images-in-directory', '-iid', dest='images_in_directory', type=str, required=False,
+                        help='Required string: Input directory containing images.')
+    parser.add_argument('--images-out-directory', '-iod', dest='images_out_directory', type=str, required=False,
+                        help='Required string: Output directory containing images.')
+    parser.add_argument('--videos-in-directory', '-vid', dest='videos_in_directory', type=str, required=False,
+                        help='Required string: Input directory containing videos.')
+    parser.add_argument('--videos-out-directory', '-vod', dest='videos_out_directory', type=str, required=False,
+                        help='Required string: Output directory containing videos.')
     args = parser.parse_args()
-    assert(os.path.exists(args.dataset_directory))
-    assert(os.path.isfile(args.pickle_path))
+    assert (os.path.isfile(args.pickle_path))
     with open(args.pickle_path, mode='rb') as f:
         camera_info = pickle.load(f)
     camera_matrix = camera_info['camera_matrix']
     distortion_coefficients = camera_info['distortion_coefficients']
-    image_paths = glob.glob(os.path.join(args.dataset_directory, "*.jpg"))
-    for index, image_path in enumerate(image_paths):
-        test_image = cv2.imread(image_path)
-        pipeline(test_image)
+    if args.images_in_directory is not None: #or args.images_out_directory is not None:
+        assert(args.images_in_directory is not None)
+        # assert(args.images_out_directory is not None)
+        # assert(os.path.exists(args.images_in_directory))
+        procees_still_images(args.images_in_directory)
+    if args.videos_in_directory is not None or args.videos_out_directory is not None:
+        assert(args.videos_in_directory is not None)
+        assert(args.videos_out_directory is not None)
+        assert(os.path.exists(args.videos_in_directory))
+        process_videos(args.videos_in_directory, args.videos_out_directory, camera_matrix, distortion_coefficients)
