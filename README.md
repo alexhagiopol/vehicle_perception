@@ -62,6 +62,13 @@ while all other pixels are set to 0. The following is an example of binary thres
 ![binary_thresholding](figures/binary_thresholding.png)
  
 #### Lane Detection: Perspective Transform
+After binary thresholding, the function `lane_detection_pipeline()` in `lane_detection.py` computes a homography matrix
+using `compute_forward_to_top_perspective_transform()`. This function uses a group of manually selected matching point pairs
+to compute a homography that transforms a forward facing image to a top-down facing image. The homography matrix is applied 
+to the binary thresholded image using OpenCV's `warpPerspective()`. Following this operation, OpenCV's `erode()` is used
+to remove noise from the detected lane lines. Below is an example result:
+
+![perspective_transform](figures/perspective_transform_binary_threshold.png)
 
 #### Lane Detection: Lane Curve Equation and Curvature Radius Estimation
 
