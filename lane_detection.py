@@ -87,7 +87,7 @@ def lane_detection_pipeline(raw_image, convert_to_RGB=False):
     front_view_points_left = cv2.perspectiveTransform(top_view_points_left, homography_inverse)
     front_view_points_right = cv2.perspectiveTransform(top_view_points_right, homography_inverse)
     radius = (left_radius + right_radius) / 2
-    frame_with_info = display_info(undistorted_image, front_view_points_left, front_view_points_right, radius, offset)
+    frame_with_info = display_info(undistorted_image, front_view_points_left, front_view_points_right, radius, offset, visualize=False)
     return frame_with_info
 
 
@@ -147,7 +147,7 @@ def show_image(location, title, img, width=3, open_new_window=False):
     if open_new_window:
         plt.figure(figsize=(width, width))
     plt.subplot(*location)
-    plt.title(title, fontsize=8)
+    plt.title(title, fontsize=16)
     plt.axis('off')
     if len(img.shape) == 3:
         plt.imshow(img)
@@ -196,10 +196,8 @@ def estimate_lane_lines(binary_top_view_image, visualize=False):
                 cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
                 cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
             # Identify the nonzero pixels in x and y within the window
-            good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_xleft_low) & (
-            nonzerox < win_xleft_high)).nonzero()[0]
-            good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_xright_low) & (
-            nonzerox < win_xright_high)).nonzero()[0]
+            good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_xleft_low) & (nonzerox < win_xleft_high)).nonzero()[0]
+            good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_xright_low) & (nonzerox < win_xright_high)).nonzero()[0]
             # Append these indices to the lists
             left_lane_inds.append(good_left_inds)
             right_lane_inds.append(good_right_inds)
@@ -277,11 +275,13 @@ def estimate_lane_lines(binary_top_view_image, visualize=False):
     return top_view_points_left, top_view_points_right, left_curve_rad, right_curve_rad, offset_meters
 
 
-def display_info(image, left_points, right_points, radius, offset):
+def display_info(image, left_points, right_points, radius, offset, visualize=False):
     original_image = copy.copy(image)
     polygon_points = np.concatenate((left_points, np.flip(right_points, axis=0)), axis=0)
     cv2.fillPoly(image, np.int32([[(polygon_points[i, 0, 0], polygon_points[i, 0, 1]) for i in range(polygon_points.shape[0])]]), [0, 255, 0])
     result = cv2.addWeighted(original_image, 0.5, image, 0.2, 0)
     cv2.putText(result, "lane curvature radius: " + str(int(radius)) + "m", (75, 75), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), thickness=5)
     cv2.putText(result, "center lane offset: " + str(round(offset, 2)) + "m", (75, 175), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), thickness=5)
+    if visualize:
+        show_image((1, 1, 1), "Completed Lane Visualization", result, open_new_window=True)
     return result

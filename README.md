@@ -50,6 +50,7 @@ correction makes straight lines in the scene appear as straight lines in the ima
 ![distortion_correction_horizon](https://github.com/alexhagiopol/camera_calibration/blob/master/figures/gopro_example_1.png)
 
 When applied to images from the dashboard camera dataset, distortion correction has a much less noticeable effect:
+
 ![distortion_correction_dashcam](figures/undistorted_dashcam.png)
 
 #### Lane Detection: Lane Marker Detection
@@ -71,10 +72,42 @@ to remove noise from the detected lane lines. Below is an example result:
 ![perspective_transform](figures/perspective_transform_binary_threshold.png)
 
 #### Lane Detection: Lane Curve Equation and Curvature Radius Estimation
+After the binary threshold image is warped above, each pixel in the resulting image must be used to compute lane curve equations
+using polynomial least squares error fit. The pixels used for this calculation are identified via a window-based search
+algorithm implemented in the function `estimate_lane_lines()`. The sliding window search method identifies windows in the 
+input image with the highest concentrations of non-zero pixels. A histogram of pixel values along columns is used to initialize 
+the search. An example of window-based search results is below:
 
+![window_search](figures/window_search.png)
+
+Once the pixels believed to belong to lane markings are identified, the least squares error polyomial fit for each lane line is
+computed using NumPy's `polyfit()` function. This line is represented as a set of coefficients in the equation y = Ax^2 + Bx + C
+where y, x, A, B, and C are in pixel dimensions. To estimate a conversion to meters, we use the U.S. standard lane width values
+to create a conversion factor. We can then convert the binary lane marker pixel locations into world coordinates and recompute
+the lane curve coefficients in world coordinates. This leads to the computation of the lane curvature radius in meters
+([reference](https://en.wikipedia.org/wiki/Radius_of_curvature)) and the computation of the offset between the center column
+of the image and the center of the lane in meters.
+
+By sampling points from the curve defined by the coefficients, we are able to produce a set of points 
+that define a many-sided polygon. By warping these points into a front-view perspective using the function `compute_top_to_forward_perspective_transform()`
+in `lane_detection.py` and OpenCV's `warpPerspective()`, we create a polygon in the front view that highlights the lane in
+front of the vehicle. This graphical work is done by the `display_info()` function in `lane_detection.py`.
+ 
 #### Lane Detection: Results - Single Video Frame
+Below is an example of the result of performing the above series of processing steps on a single video frame:
+
+![final_visualization](figures/final_visualization.png)
 
 #### Lane Detection: Results - Video
+Below is the result of performing the above series of processing steps on each video frame of a dashboard camera:
+
 [![fpv](figures/video_preview.png)](https://youtu.be/S9b64DpgMik#t=0s "Lane Detection Demo")
 
 #### Lane Detection: Conclusions and Future Work
+Upon visual inspection, the method described in this project performs satisfactorily on the video provided in the YouTube link
+above. However, testing on other datasets reveals the fundamental weak point of the project which is the robustness of the 
+lane marker detection algorithm. Color and gradient value thresholding can be defeated by illumination and geometry artifacts
+in the image. For example, cracks or seams in the pavement can appear to be lane lines because they represent strong gradients
+as computed by the Sobel method. Future work includes better tuning of the current lane marker detection procedure. Another
+approach is to implement a neural network based approach on diverse datasets with labeled lane marker pixels. This would require 
+a massive amount of manual labor that would likely pay off with production-grade accuracy.
