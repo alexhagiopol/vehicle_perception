@@ -33,8 +33,8 @@ Run the pipeline:
     
     python main.py -p camera_info.p -vid datasets/test_videos/ -vod output/
 
-### Technical Report
-#### Camera Calibration and Distortion Correction
+### Technical Report: Lane Detection
+#### Lane Detection: Camera Calibration and Distortion Correction
 This part of the project is included as a submodule of the vehicle_perception project in the `camera_calibration` directory. 
 The functions `compute_point_locations()` and `compute_calibration_matrix()` in the file `calibrate.py` implement camera calibration. Part of the example dataset provided
 is a set of images of a 9x6 chessboard. The method implemented closely follows the camera calibration procedure described in
@@ -52,13 +52,22 @@ correction makes straight lines in the scene appear as straight lines in the ima
 When applied to images from the dashboard camera dataset, distortion correction has a much less noticeable effect:
 ![distortion_correction_dashcam](figures/undistorted_dashcam.png)
 
-#### Lane Marker Detection
+#### Lane Detection: Lane Marker Detection
+In the file `lane_detection.py`, the function `lane_marker_detection()` converts an undistorted RGB image into a binary
+image in which lane markers appear clearly. The function first converts the image to grayscale, then applies the Sobel
+operator to compute the gradient in the x direction. The function then filters the Sobel image with two theresholds: (1)
+a gradient value threshold and (2) a color value threshold. Pixels which meet the requirements for either threshold are set to 1
+while all other pixels are set to 0. The following is an example of binary thresholding:
 
-#### Perspective Transform
+![binary_thresholding](figures/binary_thresholding.png)
+ 
+#### Lane Detection: Perspective Transform
 
-#### Lane Curve Equation and Curvature Radius Estimation
+#### Lane Detection: Lane Curve Equation and Curvature Radius Estimation
 
-#### Single Frame Pipeline Result
+#### Lane Detection: Results - Single Video Frame
 
-#### Demo Video
+#### Lane Detection: Results - Video
 [![fpv](figures/video_preview.png)](https://youtu.be/S9b64DpgMik#t=0s "Lane Detection Demo")
+
+#### Lane Detection: Conclusions and Future Work

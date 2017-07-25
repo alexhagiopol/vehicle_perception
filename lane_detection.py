@@ -77,8 +77,8 @@ def lane_detection_pipeline(raw_image, convert_to_RGB=False):
     if convert_to_RGB:
         raw_image = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
     # undistort
-    undistorted_image = calibrate.undistort_image(raw_image, camera_matrix, distortion_coefficients, visualize=True)
-    binary_threshold_image = binary_threshold(undistorted_image, visualize=False)
+    undistorted_image = calibrate.undistort_image(raw_image, camera_matrix, distortion_coefficients, visualize=False)
+    binary_threshold_image = lane_marker_detection(undistorted_image, visualize=False)
     homography = compute_forward_to_top_perspective_transform()
     top_view_image = cv2.warpPerspective(binary_threshold_image, homography, (binary_threshold_image.shape[1], binary_threshold_image.shape[0]))
     eroded_top_view = cv2.erode(top_view_image, np.ones((3, 3)))
@@ -105,7 +105,7 @@ def compute_top_to_forward_perspective_transform():
     return top_view_to_forward_view
 
 
-def binary_threshold(undistorted_image, visualize=False):
+def lane_marker_detection(undistorted_image, visualize=False):
     # convert to HLS color space and separate the S channel
     hls = cv2.cvtColor(undistorted_image, cv2.COLOR_RGB2HLS)
     s_channel = hls[:, :, 2]
