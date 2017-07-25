@@ -77,7 +77,7 @@ def lane_detection_pipeline(raw_image, convert_to_RGB=False):
     if convert_to_RGB:
         raw_image = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
     # undistort
-    undistorted_image = calibrate.undistort_image(raw_image, camera_matrix, distortion_coefficients, visualize=False)
+    undistorted_image = calibrate.undistort_image(raw_image, camera_matrix, distortion_coefficients, visualize=True)
     binary_threshold_image = binary_threshold(undistorted_image, visualize=False)
     homography = compute_forward_to_top_perspective_transform()
     top_view_image = cv2.warpPerspective(binary_threshold_image, homography, (binary_threshold_image.shape[1], binary_threshold_image.shape[0]))
